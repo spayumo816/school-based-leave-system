@@ -17,3 +17,10 @@ export const createBeginningBalance = (userSchoolId, payload) => {
     body: JSON.stringify(payload),
   });
 };
+
+export const updateLedgerTransaction = (transactionId, payload) => {
+  return apiFetch(`/ledger/transactions/${transactionId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+};
