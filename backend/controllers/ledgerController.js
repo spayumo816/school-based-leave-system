@@ -18,6 +18,8 @@ const leaveTypes = [
   "other",
 ];
 
+const editableLedgerTransactionTypes = ["beginning_balance", "earned_credit"];
+
 const getIdString = (value) => {
   if (!value) return "";
   if (value._id) return String(value._id);
@@ -97,6 +99,81 @@ const syncLeaveCreditsAcrossUserMemberships = async ({
   );
 };
 
+const recalculateLeaveCreditsFromLedger = async ({
+  sourceUserSchoolId,
+  userId,
+}) => {
+  const membershipIds = await getMembershipIdsByUser(userId);
+
+  const transactions = await LeaveLedgerTransaction.find({
+    userSchool: { $in: membershipIds },
+  }).sort({ transactionDate: 1, createdAt: 1 });
+
+  const runningBalances = new Map();
+
+  for (const transaction of transactions) {
+    const leaveType = transaction.leaveType;
+
+    if (!runningBalances.has(leaveType)) {
+      runningBalances.set(leaveType, {
+        earned: 0,
+        used: 0,
+      });
+    }
+
+    const current = runningBalances.get(leaveType);
+
+    current.earned += Number(transaction.earned || 0);
+    current.used += Number(transaction.usedWithPay || 0);
+
+    const balanceAfter = current.earned - current.used;
+
+    transaction.balanceAfter = balanceAfter;
+    await transaction.save();
+  }
+
+  let leaveCredit = await LeaveCredit.findOne({
+    userSchool: sourceUserSchoolId,
+  });
+
+  if (!leaveCredit) {
+    leaveCredit = await LeaveCredit.create({
+      userSchool: sourceUserSchoolId,
+      credits: [],
+    });
+  }
+
+  const allLeaveTypes = Array.from(
+    new Set([
+      ...leaveCredit.credits.map((credit) => credit.leaveType),
+      ...runningBalances.keys(),
+    ])
+  );
+
+  leaveCredit.credits = allLeaveTypes.map((leaveType) => {
+    const running = runningBalances.get(leaveType);
+    const existing = leaveCredit.credits.find(
+      (credit) => credit.leaveType === leaveType
+    );
+
+    return {
+      leaveType,
+      earned: running ? running.earned : 0,
+      used: running ? running.used : 0,
+      remarks: existing?.remarks || "",
+    };
+  });
+
+  await leaveCredit.save();
+
+  await syncLeaveCreditsAcrossUserMemberships({
+    sourceUserSchoolId,
+    userId,
+  });
+
+  return leaveCredit;
+};
+
 export const getEmployeeLedger = async (req, res) => {
   try {
     const { userSchoolId } = req.params;
@@ -126,7 +203,9 @@ export const getEmployeeLedger = async (req, res) => {
       });
     }
 
-    const membershipIds = await getMembershipIdsByUser(targetUserSchool.user._id);
+    const membershipIds = await getMembershipIdsByUser(
+      targetUserSchool.user._id
+    );
 
     const leaveCredit = await LeaveCredit.findOne({
       userSchool: userSchoolId,
@@ -423,6 +502,161 @@ export const createBeginningBalance = async (req, res) => {
   } catch (err) {
     res.status(500).json({
       message: "Failed to create beginning balance.",
+      error: err.message,
+    });
+  }
+};
+
+export const updateLedgerTransaction = async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const { leaveType, earned, transactionDate, particulars, remarks } =
+      req.body || {};
+
+    if (req.userSchool.role !== "admin_officer") {
+      return res.status(403).json({
+        message: "Only Admin Officers can edit leave ledger entries.",
+      });
+    }
+
+    const transaction = await LeaveLedgerTransaction.findById(transactionId)
+      .populate({
+        path: "userSchool",
+        populate: [
+          { path: "user", select: "name email" },
+          { path: "school" },
+        ],
+      })
+      .populate({
+        path: "createdBy",
+        select: "role position employeeNumber",
+        populate: {
+          path: "user",
+          select: "name email",
+        },
+      });
+
+    if (!transaction) {
+      return res.status(404).json({
+        message: "Ledger transaction not found.",
+      });
+    }
+
+    if (!editableLedgerTransactionTypes.includes(transaction.transactionType)) {
+      return res.status(400).json({
+        message:
+          "Only beginning balance and earned credit entries can be edited.",
+      });
+    }
+
+    if (!transaction.userSchool) {
+      return res.status(404).json({
+        message: "Employee record for this ledger entry was not found.",
+      });
+    }
+
+    if (!canAccessSchool(req, transaction.userSchool.school)) {
+      return res.status(403).json({
+        message:
+          "You can only edit ledger entries you are authorized to access.",
+      });
+    }
+
+    const finalLeaveType = normalizeLeaveType(
+      leaveType || transaction.leaveType,
+      transaction.userSchool.personnelType
+    );
+
+    if (!leaveTypes.includes(finalLeaveType)) {
+      return res.status(400).json({
+        message: "Invalid leave type.",
+      });
+    }
+
+    const earnedValue = Number(earned);
+
+    if (transaction.transactionType === "earned_credit") {
+      if (!earnedValue || earnedValue <= 0) {
+        return res.status(400).json({
+          message: "Earned credit must be greater than zero.",
+        });
+      }
+    }
+
+    if (transaction.transactionType === "beginning_balance") {
+      if (Number.isNaN(earnedValue) || earnedValue < 0) {
+        return res.status(400).json({
+          message: "Beginning balance must be zero or greater.",
+        });
+      }
+
+      const membershipIds = await getMembershipIdsByUser(
+        transaction.userSchool.user._id
+      );
+
+      const existingBeginningBalance = await LeaveLedgerTransaction.findOne({
+        _id: { $ne: transaction._id },
+        userSchool: { $in: membershipIds },
+        leaveType: finalLeaveType,
+        transactionType: "beginning_balance",
+      });
+
+      if (existingBeginningBalance) {
+        return res.status(400).json({
+          message:
+            "Beginning balance already exists for this employee and leave type.",
+        });
+      }
+    }
+
+    transaction.leaveType = finalLeaveType;
+    transaction.transactionDate = transactionDate
+      ? new Date(transactionDate)
+      : transaction.transactionDate;
+    transaction.earned = earnedValue;
+    transaction.usedWithPay = 0;
+    transaction.usedWithoutPay = 0;
+    transaction.particulars =
+      transaction.transactionType === "beginning_balance"
+        ? "Beginning balance"
+        : particulars || "Earned leave credit";
+    transaction.remarks = remarks || "";
+
+    await transaction.save();
+
+    const leaveCredit = await recalculateLeaveCreditsFromLedger({
+      sourceUserSchoolId: transaction.userSchool._id,
+      userId: transaction.userSchool.user._id,
+    });
+
+    const updatedTransaction = await LeaveLedgerTransaction.findById(
+      transaction._id
+    )
+      .populate({
+        path: "createdBy",
+        select: "role position employeeNumber",
+        populate: {
+          path: "user",
+          select: "name email",
+        },
+      })
+      .populate({
+        path: "userSchool",
+        populate: [
+          { path: "user", select: "name email" },
+          { path: "school" },
+        ],
+      })
+      .populate("leaveApplication");
+
+    return res.json({
+      message: "Ledger entry updated successfully.",
+      leaveCredit,
+      transaction: updatedTransaction,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      message: "Failed to update ledger entry.",
       error: err.message,
     });
   }
