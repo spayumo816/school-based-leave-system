@@ -3,9 +3,9 @@ import { Button, Card } from "@heroui/react";
 import {
   ArchiveBoxIcon,
   BookOpenIcon,
-  BuildingOffice2Icon,
   DocumentTextIcon,
   EyeIcon,
+  PencilSquareIcon,
   PlusIcon,
   UserIcon,
 } from "@heroicons/react/24/outline";
@@ -15,6 +15,7 @@ import {
   addEarnedCredit,
   createBeginningBalance,
   getEmployeeLedger,
+  updateLedgerTransaction,
 } from "../services/ledgerService";
 
 const teachingLeaveTypeOptions = [
@@ -50,6 +51,8 @@ const nonTeachingLeaveTypeOptions = [
   { label: "Adoption Leave", value: "adoption_leave" },
   { label: "Other", value: "other" },
 ];
+
+const editableLedgerTransactionTypes = ["beginning_balance", "earned_credit"];
 
 const getLeaveTypeOptionsByPersonnelType = (personnelType) => {
   return personnelType === "teaching"
@@ -100,6 +103,21 @@ const formatDate = (date) => {
 
 const getTodayInputValue = () => {
   return new Date().toISOString().split("T")[0];
+};
+
+const formatDateForInput = (date) => {
+  if (!date) return getTodayInputValue();
+
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return getTodayInputValue();
+  }
+
+  const timezoneOffset = parsedDate.getTimezoneOffset() * 60000;
+  const localDate = new Date(parsedDate.getTime() - timezoneOffset);
+
+  return localDate.toISOString().split("T")[0];
 };
 
 const getStatusClass = (transactionType) => {
@@ -197,6 +215,16 @@ const hasBeginningBalanceForLeaveType = (
   });
 };
 
+const isEditableLedgerTransaction = (transaction) => {
+  return editableLedgerTransactionTypes.includes(transaction.transactionType);
+};
+
+const getEditAmountLabel = (transactionType) => {
+  return transactionType === "beginning_balance"
+    ? "Beginning Balance Credits"
+    : "Earned Credit";
+};
+
 function EmptyState({ title, description }) {
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
@@ -233,6 +261,16 @@ export default function LeaveLedgerPage() {
     leaveType: "",
     beginningBalance: "",
     transactionDate: getTodayInputValue(),
+    remarks: "",
+  });
+
+  const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [editForm, setEditForm] = useState({
+    leaveType: "",
+    earned: "",
+    transactionDate: getTodayInputValue(),
+    particulars: "",
     remarks: "",
   });
 
@@ -284,7 +322,9 @@ export default function LeaveLedgerPage() {
       setEmployeeRecords(data);
 
       if (data.length > 0) {
-        setSelectedUserSchoolId(data[0].userSchool?._id || "");
+        setSelectedUserSchoolId(
+          (current) => current || data[0].userSchool?._id || ""
+        );
       }
     } catch (err) {
       setPageError(err.message || "Failed to load employees.");
@@ -406,6 +446,43 @@ export default function LeaveLedgerPage() {
     });
   };
 
+  const openEditLedgerDrawer = (transaction) => {
+    if (!canManageLedger) return;
+
+    if (!isEditableLedgerTransaction(transaction)) {
+      setPageError(
+        "Only beginning balance and earned credit entries can be edited."
+      );
+      return;
+    }
+
+    setSelectedTransaction(transaction);
+
+    setEditForm({
+      leaveType: transaction.leaveType || "",
+      earned: String(transaction.earned ?? ""),
+      transactionDate: formatDateForInput(transaction.transactionDate),
+      particulars: transaction.particulars || "",
+      remarks: transaction.remarks || "",
+    });
+
+    setDrawerError("");
+    setIsEditDrawerOpen(true);
+  };
+
+  const closeEditLedgerDrawer = () => {
+    setIsEditDrawerOpen(false);
+    setSelectedTransaction(null);
+    setDrawerError("");
+    setEditForm({
+      leaveType: "",
+      earned: "",
+      transactionDate: getTodayInputValue(),
+      particulars: "",
+      remarks: "",
+    });
+  };
+
   const handleAddEarnedCredit = async (e) => {
     e.preventDefault();
 
@@ -493,6 +570,66 @@ export default function LeaveLedgerPage() {
       closeBeginningBalanceDrawer();
     } catch (err) {
       setDrawerError(err.message || "Failed to create beginning balance.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateLedgerTransaction = async (e) => {
+    e.preventDefault();
+
+    if (!canManageLedger) return;
+
+    if (!selectedTransaction?._id) {
+      setDrawerError("Please select a ledger entry to edit.");
+      return;
+    }
+
+    if (!isEditableLedgerTransaction(selectedTransaction)) {
+      setDrawerError(
+        "Only beginning balance and earned credit entries can be edited."
+      );
+      return;
+    }
+
+    if (!editForm.leaveType) {
+      setDrawerError("Please select a leave type.");
+      return;
+    }
+
+    if (editForm.earned === "" || Number(editForm.earned) < 0) {
+      setDrawerError("Credit amount must be zero or greater.");
+      return;
+    }
+
+    if (
+      selectedTransaction.transactionType === "earned_credit" &&
+      Number(editForm.earned) <= 0
+    ) {
+      setDrawerError("Earned credit must be greater than zero.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setDrawerError("");
+
+      const currentSelectedId = selectedUserSchoolId;
+
+      await updateLedgerTransaction(selectedTransaction._id, {
+        leaveType: editForm.leaveType,
+        earned: Number(editForm.earned),
+        transactionDate: editForm.transactionDate,
+        particulars: editForm.particulars,
+        remarks: editForm.remarks,
+      });
+
+      await loadEmployeeLedger(currentSelectedId);
+      await loadEmployeeList();
+
+      closeEditLedgerDrawer();
+    } catch (err) {
+      setDrawerError(err.message || "Failed to update ledger entry.");
     } finally {
       setSaving(false);
     }
@@ -807,7 +944,7 @@ export default function LeaveLedgerPage() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-275">
+              <table className="w-full min-w-300">
                 <thead className="bg-slate-50">
                   <tr>
                     <TableHeader>Date</TableHeader>
@@ -821,6 +958,7 @@ export default function LeaveLedgerPage() {
                     <TableHeader>Balance</TableHeader>
                     <TableHeader>Encoded By</TableHeader>
                     <TableHeader>Remarks</TableHeader>
+                    {canManageLedger && <TableHeader>Action</TableHeader>}
                   </tr>
                 </thead>
 
@@ -828,7 +966,7 @@ export default function LeaveLedgerPage() {
                   {filteredTransactions.length === 0 ? (
                     <tr>
                       <td
-                        colSpan="11"
+                        colSpan={canManageLedger ? 12 : 11}
                         className="px-4 py-10 text-center text-sm text-slate-500"
                       >
                         No ledger transactions found yet.
@@ -840,7 +978,9 @@ export default function LeaveLedgerPage() {
                         key={transaction._id}
                         className="border-t border-slate-200 transition hover:bg-slate-50"
                       >
-                        <TableCell>{formatDate(transaction.transactionDate)}</TableCell>
+                        <TableCell>
+                          {formatDate(transaction.transactionDate)}
+                        </TableCell>
 
                         <TableCell>
                           <span
@@ -883,7 +1023,32 @@ export default function LeaveLedgerPage() {
                           {transaction.createdBy?.user?.name || "-"}
                         </TableCell>
 
-                        <TableCell muted>{transaction.remarks || "-"}</TableCell>
+                        <TableCell muted>
+                          {transaction.remarks || "-"}
+                        </TableCell>
+
+                        {canManageLedger && (
+                          <TableCell>
+                            {isEditableLedgerTransaction(transaction) ? (
+                              <Button
+                                size="sm"
+                                variant="flat"
+                                color="primary"
+                                onPress={() =>
+                                  openEditLedgerDrawer(transaction)
+                                }
+                                className="gap-1 font-semibold"
+                              >
+                                <PencilSquareIcon className="h-4 w-4" />
+                                Edit
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-slate-400">
+                                Locked
+                              </span>
+                            )}
+                          </TableCell>
+                        )}
                       </tr>
                     ))
                   )}
@@ -1046,6 +1211,103 @@ export default function LeaveLedgerPage() {
           </form>
         </DrawerShell>
       )}
+
+      {canManageLedger &&
+        isEditDrawerOpen &&
+        selectedEmployee &&
+        selectedTransaction && (
+          <DrawerShell
+            title="Edit Ledger Entry"
+            subtitle={`${selectedEmployee.user?.name} · ${formatTransactionType(
+              selectedTransaction.transactionType
+            )}`}
+            onClose={closeEditLedgerDrawer}
+          >
+            <form
+              onSubmit={handleUpdateLedgerTransaction}
+              className="space-y-5 p-6"
+            >
+              {drawerError && <ErrorBox message={drawerError} />}
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Only manual ledger entries can be edited. Approved leave
+                deductions are locked because they are connected to approved
+                leave applications.
+              </div>
+
+              <FormSelect
+                label="Leave Type"
+                value={editForm.leaveType}
+                onChange={(value) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    leaveType: value,
+                  }))
+                }
+                options={leaveTypeOptions}
+              />
+
+              <FormInput
+                label={getEditAmountLabel(selectedTransaction.transactionType)}
+                type="number"
+                value={editForm.earned}
+                onChange={(value) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    earned: value,
+                  }))
+                }
+                step="0.25"
+                required
+              />
+
+              <FormInput
+                label="Transaction Date"
+                type="date"
+                value={editForm.transactionDate}
+                onChange={(value) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    transactionDate: value,
+                  }))
+                }
+                required
+              />
+
+              {selectedTransaction.transactionType === "earned_credit" && (
+                <FormInput
+                  label="Particulars"
+                  value={editForm.particulars}
+                  onChange={(value) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      particulars: value,
+                    }))
+                  }
+                  required
+                />
+              )}
+
+              <FormTextarea
+                label="Remarks"
+                value={editForm.remarks}
+                onChange={(value) =>
+                  setEditForm((current) => ({
+                    ...current,
+                    remarks: value,
+                  }))
+                }
+                placeholder="Explain the correction made to this entry"
+              />
+
+              <DrawerActions
+                onCancel={closeEditLedgerDrawer}
+                loading={saving}
+                submitLabel="Save Changes"
+              />
+            </form>
+          </DrawerShell>
+        )}
     </div>
   );
 }
@@ -1087,10 +1349,17 @@ function TableCell({ children, muted = false, strong = false }) {
   );
 }
 
-function DrawerShell({ title, subtitle, children }) {
+function DrawerShell({ title, subtitle, children, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-      <div className="h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl">
+      <button
+        type="button"
+        aria-label="Close drawer"
+        className="absolute inset-0 h-full w-full cursor-default"
+        onClick={onClose}
+      />
+
+      <div className="relative h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl">
         <div className="border-b border-slate-200 px-6 py-5">
           <h2 className="text-xl font-bold text-slate-900">{title}</h2>
           {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
