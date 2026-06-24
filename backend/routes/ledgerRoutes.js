@@ -3,6 +3,7 @@ import {
   addEarnedCredit,
   createBeginningBalance,
   getEmployeeLedger,
+  updateLedgerTransaction,
 } from "../controllers/ledgerController.js";
 import { protect, authorizeRoles } from "../middleware/authMiddleware.js";
 
@@ -27,6 +28,13 @@ router.post(
   protect,
   authorizeRoles("admin_officer"),
   createBeginningBalance
+);
+
+router.patch(
+  "/transactions/:transactionId",
+  protect,
+  authorizeRoles("admin_officer"),
+  updateLedgerTransaction
 );
 
 export default router;
