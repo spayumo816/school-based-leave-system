@@ -319,7 +319,12 @@ export default function LeaveLedgerPage() {
       setPageError("");
 
       const data = await getSchoolCredits();
-      setEmployeeRecords(data);
+
+      setEmployeeRecords(
+        data.filter(
+          (record) => record.userSchool?.isActive === true
+        )
+      );
 
       if (data.length > 0) {
         setSelectedUserSchoolId(
