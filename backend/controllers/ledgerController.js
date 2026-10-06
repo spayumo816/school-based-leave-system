@@ -178,7 +178,10 @@ export const getEmployeeLedger = async (req, res) => {
   try {
     const { userSchoolId } = req.params;
 
-    const targetUserSchool = await UserSchool.findById(userSchoolId)
+    const targetUserSchool = await UserSchool.findOne({
+      _id: userSchoolId,
+      isActive: true,
+    })
       .populate("user", "name email")
       .populate("school");
 
