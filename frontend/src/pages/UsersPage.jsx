@@ -10,8 +10,10 @@ import {
   UserIcon,
 } from "@heroicons/react/24/outline";
 import {
+  activateUser,
   createUser,
   deactivateUser,
+  getInactiveUsers,
   getUsers,
   resetUserPassword,
   updateUser,
@@ -69,6 +71,7 @@ const employmentStatusOptions = [
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
+  const [inactiveUsers, setInactiveUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
@@ -88,22 +91,31 @@ export default function UsersPage() {
   }, []);
 
   const employeeStats = useMemo(() => {
-    const total = users.length;
-    const active = users.filter((employee) => employee.isActive).length;
-    const inactive = users.filter((employee) => !employee.isActive).length;
-    const teachers = users.filter((employee) => employee.role === "teacher")
-      .length;
+    const allEmployees = [...users, ...inactiveUsers];
+
+    const total = allEmployees.length;
+    const active = users.length;
+    const inactive = inactiveUsers.length;
+
+    const teachers = allEmployees.filter(
+      (employee) => employee.role === "teacher"
+    ).length;
 
     return { total, active, inactive, teachers };
-  }, [users]);
+  }, [users, inactiveUsers]);
 
   const loadUsers = async () => {
     try {
       setLoading(true);
       setPageError("");
 
-      const data = await getUsers();
-      setUsers(data);
+      const [activeData, inactiveData] = await Promise.all([
+        getUsers(),
+        getInactiveUsers(),
+      ]);
+
+      setUsers(activeData);
+      setInactiveUsers(inactiveData);
     } catch (err) {
       setPageError(err.message || "Failed to load employees.");
     } finally {
@@ -265,6 +277,26 @@ export default function UsersPage() {
       setSuccessMessage("Employee deactivated successfully.");
     } catch (err) {
       setPageError(err.message || "Failed to deactivate employee.");
+    }
+  };
+
+  const handleActivate = async (employee) => {
+    const confirmed = window.confirm(
+      `Activate ${employee.user?.name}? They will become active in this school again.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setPageError("");
+      setSuccessMessage("");
+
+      await activateUser(employee._id);
+      await loadUsers();
+
+      setSuccessMessage("Employee activated successfully.");
+    } catch (err) {
+      setPageError(err.message || "Failed to activate employee.");
     }
   };
 

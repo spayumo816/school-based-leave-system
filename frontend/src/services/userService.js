@@ -4,6 +4,10 @@ export const getUsers = () => {
   return apiFetch("/users");
 };
 
+export const getInactiveUsers = () => {
+  return apiFetch("/users/inactive");
+};
+
 export const createUser = (payload) => {
   return apiFetch("/users", {
     method: "POST",
