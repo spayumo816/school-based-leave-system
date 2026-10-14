@@ -257,6 +257,35 @@ export const deactivateSchoolUser = async (req, res) => {
   }
 };
 
+export const activateSchoolUser = async (req, res) => {
+  try {
+    const query = {
+      _id: req.params.id,
+      ...getScopedSchoolQuery(req),
+    };
+
+    const userSchool = await UserSchool.findOne(query);
+
+    if (!userSchool) {
+      return res.status(404).json({
+        message: "User membership not found.",
+      });
+    }
+
+    userSchool.isActive = true;
+    await userSchool.save();
+
+    return res.json({
+      message: "User activated successfully.",
+      userSchool,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
 export const resetUserPassword = async (req, res) => {
   try {
     const { password } = req.body;

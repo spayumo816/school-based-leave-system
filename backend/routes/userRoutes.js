@@ -1,11 +1,14 @@
 import express from "express";
+
 import {
   createSchoolUser,
   getSchoolUsers,
   updateSchoolUser,
   deactivateSchoolUser,
+  activateSchoolUser,
   resetUserPassword,
 } from "../controllers/userController.js";
+
 import {
   protect,
   authorizeRoles,
@@ -46,6 +49,13 @@ router.patch(
   protect,
   authorizeRoles("admin_officer", "division_admin"),
   deactivateSchoolUser
+);
+
+router.patch(
+  "/:id/activate",
+  protect,
+  authorizeRoles("admin_officer", "division_admin"),
+  activateSchoolUser
 );
 
 export default router;
