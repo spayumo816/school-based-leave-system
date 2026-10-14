@@ -3,6 +3,7 @@ import express from "express";
 import {
   createSchoolUser,
   getSchoolUsers,
+  getInactiveSchoolUsers,
   updateSchoolUser,
   deactivateSchoolUser,
   activateSchoolUser,
@@ -28,6 +29,13 @@ router.get(
   protect,
   authorizeRoles("admin_officer", "division_admin"),
   getSchoolUsers
+);
+
+router.get(
+  "/inactive",
+  protect,
+  authorizeRoles("admin_officer", "division_admin"),
+  getInactiveSchoolUsers
 );
 
 router.patch(
@@ -57,5 +65,6 @@ router.patch(
   authorizeRoles("admin_officer", "division_admin"),
   activateSchoolUser
 );
+
 
 export default router;

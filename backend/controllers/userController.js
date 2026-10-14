@@ -329,3 +329,23 @@ export const resetUserPassword = async (req, res) => {
     });
   }
 };
+
+export const getInactiveSchoolUsers = async (req, res) => {
+  try {
+    const query = {
+      ...getScopedSchoolQuery(req),
+      isActive: false,
+    };
+
+    const users = await UserSchool.find(query)
+      .populate("user", "-password")
+      .populate("school")
+      .sort({ school: 1, role: 1, createdAt: -1 });
+
+    return res.json(users);
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message,
+    });
+  }
+};
