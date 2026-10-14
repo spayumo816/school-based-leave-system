@@ -24,6 +24,11 @@ export const deactivateUser = (id) => {
   });
 };
 
+export const activateUser = (id) =>
+  apiFetch(`/users/${id}/activate`, {
+    method: "PATCH",
+  });
+
 export const resetUserPassword = (id, payload) => {
   return apiFetch(`/users/${id}/reset-password`, {
     method: "PATCH",

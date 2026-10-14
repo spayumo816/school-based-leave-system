@@ -500,6 +500,130 @@ export default function UsersPage() {
         </Card.Content>
       </Card>
 
+      <Card className="border border-slate-200 bg-white shadow-sm">
+        <Card.Content className="p-0">
+          <div className="flex flex-col justify-between gap-3 border-b border-slate-200 p-5 md:flex-row md:items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-700">
+                <UserGroupIcon className="h-5 w-5" />
+              </div>
+
+              <div>
+                <h2 className="font-bold text-slate-900">
+                  Deactivated Employees
+                </h2>
+
+                <p className="text-sm text-slate-500">
+                  Employees who are currently inactive in this school.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
+              {inactiveUsers.length} record(s)
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-237.5">
+              <thead className="bg-slate-50">
+                <tr>
+                  <TableHeader>Employee</TableHeader>
+                  <TableHeader>Employee No.</TableHeader>
+                  <TableHeader>Role</TableHeader>
+                  <TableHeader>Personnel Type</TableHeader>
+                  <TableHeader>Position</TableHeader>
+                  <TableHeader>Date Hired</TableHeader>
+                  <TableHeader>Status</TableHeader>
+                  <TableHeader align="right">Actions</TableHeader>
+                </tr>
+              </thead>
+
+              <tbody>
+                {inactiveUsers.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan="8"
+                      className="px-4 py-10 text-center text-sm text-slate-500"
+                    >
+                      No deactivated employees.
+                    </td>
+                  </tr>
+                ) : (
+                  inactiveUsers.map((employee) => (
+                    <tr
+                      key={employee._id}
+                      className="border-t border-slate-200 transition hover:bg-slate-50"
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
+                            {getInitials(employee.user?.name)}
+                          </div>
+
+                          <div>
+                            <p className="font-semibold text-slate-900">
+                              {employee.user?.name || "Employee"}
+                            </p>
+
+                            <p className="text-sm text-slate-500">
+                              {employee.user?.email || "-"}
+                            </p>
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        {employee.employeeNumber || "-"}
+                      </TableCell>
+
+                      <TableCell>
+                        <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold capitalize text-sky-700">
+                          {formatLabel(employee.role)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell capitalize>
+                        {formatLabel(employee.personnelType)}
+                      </TableCell>
+
+                      <TableCell muted>
+                        {employee.position || "-"}
+                      </TableCell>
+
+                      <TableCell muted>
+                        {formatDate(employee.dateHired)}
+                      </TableCell>
+
+                      <TableCell>
+                        <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+                          Inactive
+                        </span>
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex justify-end">
+                          <Tooltip content="Activate employee">
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              color="success"
+                              onPress={() => handleActivate(employee)}
+                            >
+                              Activate
+                            </Button>
+                          </Tooltip>
+                        </div>
+                      </TableCell>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card.Content>
+      </Card>
+
       {isAddDrawerOpen && (
         <EmployeeDrawer
           title="Add Employee"
